@@ -9,15 +9,15 @@ import time
 # CONFIGURACIÓN Y PARÁMETROS
 # ==============================================================================
 
-Nx = 80  # por ahora para probar 
-Ny = 8
+Nx = 100  # por ahora para probar 
+Ny = 10
 
 N_total = Nx * Ny  
 h=1 # Tamaño del paso (ya se discretizo así que no se usa explícitamente en las fórmulas)
 V0 = 1.0 # Velocidad de entrada  (cual era?????)
 Re = 0.1
 
-tol = 1e-5 # Tolerancia para convergencia
+tol = 1e-6 # Tolerancia para convergencia
 max_iter = 50 #| Número máximo de iteraciones
 
 # damping opcional
@@ -193,14 +193,14 @@ def calculate_F(x_vec):
 # ==============================================================================
 # Calcula la matriz Jacobiana J dado el vector x_vec (que contiene vx y vy)
 # el Jacobiano es: J[i,j] = dF_i/dx_j
-
+# no se calcula como malla 2d fisicamente, sino que se calcula directamente en formato vectorizado para luego convertirlo a sparse
+#Jmn =∂xm/∂Fn     donde:  m = número de ecuación,  n = número de variable
 def calculate_J(x_vec):
-
     vx, vy = vector_to_grids(x_vec)
 
     size = len(x_vec)
 
-    J = lil_matrix((size, size))
+    J = lil_matrix((size, size)) # solo almacenamos los elementos no nulos para eficiencia.
 
     # --------------------------------------------------------------------------
     # NODOS INTERNOS
@@ -465,12 +465,12 @@ for k in range(max_iter):
 
     vx, vy = vector_to_grids(x_vec)
 
-    # entrada
+    # entrada, volvemos a imponer la condición de velocidad de entrada para evitar que se corrompa por el método numérico
 
     vx[0, 1:Ny-1] = V0
     vy[0, 1:Ny-1] = 0.0
 
-    # paredes
+    # paredes, volvemos a imponer la condición de no deslizamiento para evitar que se corrompa por el método numérico
 
     vx[:,0] = 0.0
     vy[:,0] = 0.0
@@ -478,7 +478,7 @@ for k in range(max_iter):
     vx[:,Ny-1] = 0.0
     vy[:,Ny-1] = 0.0
 
-    # obstáculos
+    # obstáculos, volvemos a imponer la condición de no deslizamiento para evitar que se corrompa por el método numérico
 
     for i in range(Nx):
         for j in range(Ny):
@@ -488,7 +488,7 @@ for k in range(max_iter):
                 vx[i,j] = 0.0
                 vy[i,j] = 0.0
 
-    # salida
+    # salida, volvemos a imponer la condición de velocidad de salida 
 
     vx[Nx-1, 1:Ny-1] = vx[Nx-2, 1:Ny-1]
     vy[Nx-1, 1:Ny-1] = vy[Nx-2, 1:Ny-1]
@@ -502,7 +502,12 @@ for k in range(max_iter):
 elapsed = time.time() - start_time
 
 vx_final, vy_final = vector_to_grids(x_vec)
-
+print("\n============== RESULTADOS FINALES ==============\n")
+print("vector vx final:")
+print(vx_final)
+print("\n ==============================\n")
+print("vector vy final:")
+print(vy_final)
 print(f"\nTiempo total = {elapsed:.2f} s")
 
 # Verificar convergencia final
