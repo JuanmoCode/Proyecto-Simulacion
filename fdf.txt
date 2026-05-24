@@ -1,0 +1,455 @@
+# CONFIGURACIÓN Y PARÁMETROS
+# Parámetros de la malla
+Nx = 80      # Nodos en eje X
+Ny = 8     # Nodos en eje Y
+N_total = Nx * Ny
+h = 1.0          # Tamaño del paso (ya se discretizo así que no se usa explícitamente en las fórmulas)
+
+# Parámetros físicos
+V0 = 1.0         # Velocidad de entrada  (cual era?????)
+Re = 0.1         # Número de Reynolds (para estabilidad)
+
+# dimensiones de los Beam (se redimensionaron para que sean visibles en la malla)
+beam1_x_start = 10
+beam1_x_end   = 22
+beam1_y_start = 5
+beam1_y_end   = 7
+
+beam2_x_start = 40
+beam2_x_end   = 55
+beam2_y_start = 1
+beam2_y_end   = 5
+
+
+# Parámetros de Newton
+tol = 1e-5       # Tolerancia de convergencia
+max_iter = 50    # Máximo de iteraciones Newton
+damping = 0.5    # Factor de amortiguación (para evitar divergencia en Newton) podemos usarlo o
+
+print("="*50)
+print("SIMULACIÓN NAVIER-STOKES - MÉTODO DE NEWTON")
+print("="*50)
+
+#  FUNCIONES AUXILIARES DE INDEXADO
+# Para Newton, necesitamos un vector largo x_vec que contenga todas las velocidades (vx y vy) en cada nodo.
+
+
+def get_idx(i, j, variable):
+    """Convierte coordenadas (i,j) y variable (0=vx, 1=vy) a índice del vector"""
+    idx = i * Ny + j
+    if variable == 'vx':
+        return idx
+    else:
+        return idx + N_total
+
+def vector_to_grids(x_vec):
+    """Convierte el vector plano de vuelta a matrices 2D para cálculos"""
+    vx = x_vec[:N_total].reshape((Nx, Ny))
+    vy = x_vec[N_total:].reshape((Nx, Ny))
+    return vx, vy
+
+def grids_to_vector(vx, vy):
+    """Convierte matrices 2D a vector plano"""
+    return np.concatenate([vx.flatten(), vy.flatten()])
+
+
+def is_obstacle(i, j):
+
+    in_beam1 = (
+        beam1_x_start <= i <= beam1_x_end and
+        beam1_y_start <= j <= beam1_y_end
+    )
+
+    in_beam2 = (
+        beam2_x_start <= i <= beam2_x_end and
+        beam2_y_start <= j <= beam2_y_end
+    )
+
+    return in_beam1 or in_beam2
+
+
+
+# FUNCIONES DE NEWTON: CÁLCULO (F) Y JACOBIANA (J)
+# x_vec es el vector plano con todas las velocidades (vx y vy) en cada nodo. Necesario para calcular F y J en cada iteración de Newton. 
+# x_vec = [vx(0,0), vx(0,1), ..., vx(Nx,Ny), vy(0,0), ..., vy(Nx,Ny)]
+
+
+
+# calculamos F(X^K)
+# F es el vector de residuos, que mide cuánto se incumplen las ecuaciones de Navier-Stokes para la solución actual x_vec.
+# formula de F: F = [F_vx(0,0), F_vx(0,1), ..., F_vx(Nx,Ny), F_vy(0,0), ..., F_vy(Nx,Ny)]
+def calculate_F(x_vec):
+    """
+    F debe ser cero cuando la solución es correcta.
+    """
+    vx, vy = vector_to_grids(x_vec)
+    
+    # Inicializar residuos
+    F = np.zeros_like(x_vec)
+    F_vx = F[:N_total].reshape((Nx, Ny))
+    F_vy = F[N_total:].reshape((Nx, Ny))
+    
+    # Nodos internos
+    for i in range(1, Nx-1):
+        for j in range(1, Ny-1):
+            
+            # Saltar si es el beam
+            if  is_obstacle(i,j):
+                continue
+                
+            
+            # (EJE x)
+            # Término Difusivo 
+            diff_x = (vx[i+1,j] + vx[i-1,j] + vx[i,j+1] + vx[i,j-1] - 4*vx[i,j]) / 16.0
+            
+            # Término Convectivo 
+            conv_x = vx[i,j] * (vx[i+1,j] - vx[i-1,j]) / 8.0 + \
+                     vy[i,j] * (vx[i,j+1] - vx[i,j-1]) / 8.0
+            
+            # Residuo Eje X
+            F_vx[i,j] = diff_x - conv_x
+            
+            # (EJE Y) 
+            # Término Difusivo
+            diff_y = (vy[i+1,j] + vy[i-1,j] + vy[i,j+1] + vy[i,j-1] - 4*vy[i,j]) / 16.0
+            
+            # Término Convectivo
+            conv_y = vx[i,j] * (vy[i+1,j] - vy[i-1,j]) / 8.0 + \
+                     vy[i,j] * (vy[i,j+1] - vy[i,j-1]) / 8.0
+            
+            # Residuo Eje Y
+            F_vy[i,j] = diff_y - conv_y
+
+
+    # ENTRADA
+    # vx = V0
+    # vy = 0
+    for j in range(1, Ny-1):
+        if is_obstacle(0, j):
+            continue
+
+        F_vx[0, j] = vx[0, j] - V0
+        F_vy[0, j] = vy[0, j]
+
+
+    # PAREDES
+    # vx = 0
+    # vy = 0
+    for i in range(1, Nx-1):
+        # Inferior
+        if not is_obstacle(i, 0):
+
+            F_vx[i,0] = vx[i,0]
+            F_vy[i,0] = vy[i,0]
+
+        # Superior
+        if not is_obstacle(i, Ny-1):
+
+            F_vx[i,Ny-1] = vx[i,Ny-1]
+            F_vy[i,Ny-1] = vy[i,Ny-1]
+
+
+    # OBSTACULOS
+    # vx = 0
+    # vy = 0
+    for i in range(Nx):
+        for j in range(Ny):
+            if is_obstacle(i, j):
+                F_vx[i,j] = vx[i,j]
+                F_vy[i,j] = vy[i,j]
+
+
+    # SALIDA
+    # dv/dx = 0
+    for j in range(1, Ny-1):
+        if is_obstacle(Nx-1, j):
+            continue
+
+        F_vx[Nx-1, j] = ( vx[Nx-1, j] - vx[Nx-2, j])
+        F_vy[Nx-1, j] = ( vy[Nx-1, j] - vy[Nx-2, j] )
+
+    return F
+
+
+
+# J es la matriz Jacobiana, que mide cómo cambian los residuos F cuando hacemos pequeños cambios en las velocidades (x_vec). Es esencial para el método de Newton, ya que nos dice en qué dirección corregir la solución.
+#Calcula la Matriz Jacobiana J = dF/dv.
+def calculate_J(x_vec):
+    vx, vy = vector_to_grids(x_vec)
+    size = len(x_vec)
+    J = lil_matrix((size, size))
+    
+    # Recorrer nodos internos
+    for i in range(1, Nx-1):
+        for j in range(1, Ny-1):
+            if is_obstacle(i,j):
+                 continue
+            
+            # Índices en el vector plano
+            idx_vx = get_idx(i, j, 'vx')
+            idx_vy = get_idx(i, j, 'vy')
+            
+            # --- FILA para Ecuación X ---
+            # Derivada de F_vx respecto a v_x(i,j) (Central)
+            # d/dx (v_x) -> -4/16 - (v_x[i+1]-v_x[i-1])/8
+            J[idx_vx, idx_vx] = -4/16.0 - (vx[i+1,j] - vx[i-1,j])/8.0
+            
+            # Derivada respecto a v_x(i+1,j) (Derecha)
+            J[idx_vx, get_idx(i+1,j,'vx')] = 1/16.0 - vx[i,j]/8.0
+            
+            # Derivada respecto a v_x(i-1,j) (Izquierda)
+            J[idx_vx, get_idx(i-1,j,'vx')] = 1/16.0 + vx[i,j]/8.0
+            
+            # Derivada respecto a v_x(i,j+1) (Arriba)
+            J[idx_vx, get_idx(i,j+1,'vx')] = 1/16.0 - vy[i,j]/8.0
+            
+            # Derivada respecto a v_x(i,j-1) (Abajo)
+            J[idx_vx, get_idx(i,j-1,'vx')] = 1/16.0 + vy[i,j]/8.0
+            
+            # Derivada respecto a v_y(i,j) (Acoplamiento)
+            J[idx_vx, idx_vy] = -(vx[i,j+1] - vx[i,j-1])/8.0
+            
+
+            # --- FILA para Ecuación Y ---
+            # Derivada de F_vy respecto a v_y(i,j) (Central)
+            J[idx_vy, idx_vy] = -4/16.0 - (vy[i,j+1] - vy[i,j-1])/8.0
+            
+            # Derivada respecto a v_y(i+1,j)
+            J[idx_vy, get_idx(i+1,j,'vy')] = 1/16.0 - vx[i,j]/8.0
+            
+            # Derivada respecto a v_y(i-1,j)
+            J[idx_vy, get_idx(i-1,j,'vy')] = 1/16.0 + vx[i,j]/8.0
+            
+            # Derivada respecto a v_y(i,j+1)
+            J[idx_vy, get_idx(i,j+1,'vy')] = 1/16.0 - vy[i,j]/8.0
+            
+            # Derivada respecto a v_y(i,j-1)
+            J[idx_vy, get_idx(i,j-1,'vy')] = 1/16.0 + vy[i,j]/8.0
+            
+            # Derivada respecto a v_x(i,j) (Acoplamiento)
+            J[idx_vy, idx_vx] = -(vy[i+1,j] - vy[i-1,j])/8.0
+
+
+
+    # CONDICIONES DE FRONTERA
+    # Para nodos con valor fijo, la ecuación es v - v_fixed = 0
+    # La derivada es 1, el resto 0.
+    # las esquinas se estan incliuendo en las paredes, asi que no se necesitan condiciones especiales para ellas.
+    
+    # Entrada
+    for j in range(1, Ny-1):
+        if is_obstacle(0, j):
+             continue
+
+        id_vx = get_idx(0, j, 'vx')
+        id_vy = get_idx(0, j, 'vy')
+
+        # vx = V0
+        J[id_vx, :] = 0
+        J[id_vx, id_vx] = 1.0
+
+        # vy = 0
+        J[id_vy, :] = 0
+        J[id_vy, id_vy] = 1.0
+
+    #  PAREDES SUPERIOR E INFERIOR
+    # No-slip:
+    # vx = 0
+    # vy = 0
+    for i in range(Nx):
+        # Pared inferior (j=0)
+        if not is_obstacle(i, 0):
+            id_vx = get_idx(i, 0, 'vx')
+            id_vy = get_idx(i, 0, 'vy')
+            J[id_vx, :] = 0
+            J[id_vx, id_vx] = 1.0
+            J[id_vy, :] = 0
+            J[id_vy, id_vy] = 1.0
+
+        # Pared superior (j=Ny-1)
+        if not is_obstacle(i, Ny-1):
+            id_vx = get_idx(i, Ny-1, 'vx')
+            id_vy = get_idx(i, Ny-1, 'vy')
+            J[id_vx, :] = 0
+            J[id_vx, id_vx] = 1.0
+            J[id_vy, :] = 0
+            J[id_vy, id_vy] = 1.0
+
+    # Salida derecha
+    # dv/dx = 0
+    # v(Nx-1) - v(Nx-2) = 0
+    for j in range(1, Ny-1):
+
+        if is_obstacle(Nx-1, j):
+            continue
+
+        # vx
+        id_vx = get_idx(Nx-1, j, 'vx')
+        id_vx_prev = get_idx(Nx-2, j, 'vx')
+        J[id_vx, :] = 0
+        J[id_vx, id_vx] = 1.0
+        J[id_vx, id_vx_prev] = -1.0
+
+        # vy
+        id_vy = get_idx(Nx-1, j, 'vy')
+        id_vy_prev = get_idx(Nx-2, j, 'vy')
+        J[id_vy, :] = 0
+        J[id_vy, id_vy] = 1.0
+        J[id_vy, id_vy_prev] = -1.0
+
+    return J.tocsr()  # guarda solo los no ceros para eficiencia en memoria y cálculo
+
+
+
+#  BUCLE PRINCIPAL DE NEWTON!!!!
+
+# Inicialización estable:
+# Newton converge mucho mejor de esta manera que con ceros.
+vx_init = V0 * np.ones((Nx, Ny))
+vy_init = np.zeros((Nx, Ny))
+
+# Paredes superior e inferior
+vx_init[:, 0] = 0.0
+vx_init[:, Ny-1] = 0.0
+
+# Obstáculos
+for i in range(Nx):
+    for j in range(Ny):
+        if is_obstacle(i, j):
+            vx_init[i, j] = 0.0
+            vy_init[i, j] = 0.0
+
+# Convertimos a vector plano
+x_vec = grids_to_vector(vx_init, vy_init)
+
+# HISTORIAL DE CONVERGENCIA
+error_history = []
+
+# INICIO NEWTON
+print("\nIniciando Newton-Raphson...\n")
+
+start_time = time.time()
+
+for k in range(max_iter):
+
+    # 1. CALCULAR RESIDUOS
+    F = calculate_F(x_vec)
+    print("NaN en F:", np.any(np.isnan(F)))
+    print("Inf en F:", np.any(np.isinf(F)))
+
+    # 2. ERROR
+    error = np.linalg.norm(F, np.inf) # norma infinito (máximo residuo) para medir el error de convergencia
+    error_history.append(error)
+    print(f"Iteración {k+1:02d} | Error = {error:.8e}")
+
+    # 3. VERIFICAR CONVERGENCIA
+    if error < tol:
+        print("\n si converge\n")
+        break
+
+    # 4. CALCULAR JACOBIANO
+    J = calculate_J(x_vec)
+    print("Filas cero:", np.sum(J.getnnz(axis=1) == 0))
+
+    # 5. RESOLVER:   J * delta X = -F
+    try:
+        delta = spsolve(J, -F) #implementamos algebra ? (no porfavor)
+        print("NaN en delta:", np.any(np.isnan(delta)))
+        if np.any(np.isnan(delta)):
+              print("Jacobiano singular o solución inválida")
+              break
+        print("Inf en delta:", np.any(np.isinf(delta)))
+    except Exception as e:
+        print("\n Error resolviendo sistema lineal:")
+        print(e)
+        break
+
+    # 6. ACTUALIZAR SOLUCIÓN
+    x_vec = x_vec + damping * delta
+
+    # 7. REIMPONER CONDICIONES FRONTERA
+    vx, vy = vector_to_grids(x_vec)
+
+    # Entrada izquierda SOLO nodos internos
+    vx[0, 1:Ny-1] = V0
+    vy[0, 1:Ny-1] = 0.0
+
+    # Paredes superior e inferior
+    vx[:, 0] = 0.0
+    vy[:, 0] = 0.0
+
+    vx[:, Ny-1] = 0.0
+    vy[:, Ny-1] = 0.0
+
+    # Obstáculos
+    for i in range(Nx):
+        for j in range(Ny):
+
+            if is_obstacle(i, j):
+
+                vx[i, j] = 0.0
+                vy[i, j] = 0.0
+
+
+    # Salida:
+    # gradiente cero
+    vx[Nx-1, :] = vx[Nx-2, :]
+    vy[Nx-1, :] = vy[Nx-2, :]
+
+    # Volver a vector
+    x_vec = grids_to_vector(vx, vy)
+
+
+# FIN
+elapsed = time.time() - start_time
+vx_final, vy_final = vector_to_grids(x_vec)
+print(f"\n Tiempo total = {elapsed:.2f} s")
+if error_history[-1] > tol:
+    print("\n Newton NO convergió completamente")
+
+
+
+
+"""
+
+# ==============================================================================
+# 5. VISUALIZACIÓN
+# ==============================================================================
+velocity_mag = np.sqrt(vx_final**2 + vy_final**2)
+
+plt.figure(figsize=(12, 5))
+
+# Mapa de calor
+plt.subplot(1, 2, 1)
+plt.imshow(velocity_mag.T, origin='lower', cmap='viridis', extent=[0, Nx, 0, Ny])
+plt.colorbar(label='|v| (m/s)')
+plt.title('Magnitud de Velocidad')
+plt.xlabel('x')
+plt.ylabel('y')
+
+# Vectores (submuestreados)
+skip = 4
+X, Y = np.meshgrid(np.arange(0, Nx, skip), np.arange(0, Ny, skip))
+U = vx_final[::skip, ::skip].T
+V = vy_final[::skip, ::skip].T
+plt.quiver(X, Y, U, V, color='white', scale=50)
+
+# Dibujar Beam
+rect = plt.Rectangle((beam_x_start, beam_y_start), 
+                     beam_x_end-beam_x_start, 
+                     beam_y_end-beam_y_start, 
+                     color='gray', alpha=0.5)
+plt.gca().add_patch(rect)
+
+# Gráfico de convergencia
+plt.subplot(1, 2, 2)
+# Re-calculamos residuos para graficar histórico si fuera necesario, 
+# pero aquí mostramos el estado final.
+plt.imshow(vx_final.T, origin='lower', cmap='coolwarm')
+plt.colorbar(label='Vx')
+plt.title('Campo Vx Final')
+
+plt.tight_layout()
+plt.show()
+
+"""
