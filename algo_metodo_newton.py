@@ -15,13 +15,12 @@ Ny = 10
 N_total = Nx * Ny  
 h=1 # Tamaño del paso (ya se discretizo así que no se usa explícitamente en las fórmulas)
 V0 = 1.0 # Velocidad de entrada  (cual era?????)
-Re = 0.1
+
 
 tol = 1e-6 # Tolerancia para convergencia
 max_iter = 50 #| Número máximo de iteraciones
 
-# damping opcional
-damping = 0.5
+
 
 # ==============================================================================
 # OBSTÁCULOS
@@ -103,7 +102,7 @@ def calculate_F(x_vec):
 
             # DIFUSIÓN
 
-            diff_x = (1/Re) * (
+            diff_x =  (
                 vx[i+1,j] +
                 vx[i-1,j] +
                 vx[i,j+1] +
@@ -111,7 +110,7 @@ def calculate_F(x_vec):
                 4*vx[i,j]
             ) / 16.0
 
-            diff_y = (1/Re) * (
+            diff_y =  (
                 vy[i+1,j] +
                 vy[i-1,j] +
                 vy[i,j+1] +
@@ -220,31 +219,31 @@ def calculate_J(x_vec):
             # ==============================================================
 
             J[idx_vx, idx_vx] = (
-                -(4/Re)/16.0
+                -(4)/16.0
                 -
                 (vx[i+1,j] - vx[i-1,j]) / 8.0
             )
 
             J[idx_vx, get_idx(i+1,j,'vx')] = (
-                (1/Re)/16.0
+                (1)/16.0
                 -
                 vx[i,j]/8.0
             )
 
             J[idx_vx, get_idx(i-1,j,'vx')] = (
-                (1/Re)/16.0
+                (1)/16.0
                 +
                 vx[i,j]/8.0
             )
 
             J[idx_vx, get_idx(i,j+1,'vx')] = (
-                (1/Re)/16.0
+                (1)/16.0
                 -
                 vy[i,j]/8.0
             )
 
             J[idx_vx, get_idx(i,j-1,'vx')] = (
-                (1/Re)/16.0
+                (1)/16.0
                 +
                 vy[i,j]/8.0
             )
@@ -258,31 +257,31 @@ def calculate_J(x_vec):
             # ==============================================================
 
             J[idx_vy, idx_vy] = (
-                -(4/Re)/16.0
+                -(4)/16.0
                 -
                 (vy[i,j+1] - vy[i,j-1]) / 8.0
             )
 
             J[idx_vy, get_idx(i+1,j,'vy')] = (
-                (1/Re)/16.0
+                (1)/16.0
                 -
                 vx[i,j]/8.0
             )
 
             J[idx_vy, get_idx(i-1,j,'vy')] = (
-                (1/Re)/16.0
+                (1)/16.0
                 +
                 vx[i,j]/8.0
             )
 
             J[idx_vy, get_idx(i,j+1,'vy')] = (
-                (1/Re)/16.0
+                (1)/16.0
                 -
                 vy[i,j]/8.0
             )
 
             J[idx_vy, get_idx(i,j-1,'vy')] = (
-                (1/Re)/16.0
+                (1)/16.0
                 +
                 vy[i,j]/8.0
             )
@@ -461,7 +460,7 @@ for k in range(max_iter):
     # ACTUALIZAR SOLUCIÓN
     # ----------------------------------------------------------------------
 
-    x_vec = x_vec + damping * delta
+    x_vec = x_vec +  delta
 
     vx, vy = vector_to_grids(x_vec)
 
