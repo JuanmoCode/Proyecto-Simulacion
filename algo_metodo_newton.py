@@ -14,13 +14,15 @@ Ny = 10
 
 N_total = Nx * Ny  
 h=1 # Tamaño del paso (ya se discretizo así que no se usa explícitamente en las fórmulas)
-V0 = 1.0 # Velocidad de entrada  (cual era?????)
-
+V0 = 1 # Velocidad de entrada  (cual era?????)
+Re = 0.1 # Número de Reynolds, controla la relación entre convección y difusión. 
+#         Valores bajos = flujo laminar, valores altos = flujo turbulento.
 
 tol = 1e-6 # Tolerancia para convergencia
 max_iter = 50 #| Número máximo de iteraciones
 
-
+# damping 
+damping = 1.0
 
 # ==============================================================================
 # OBSTÁCULOS
@@ -101,8 +103,7 @@ def calculate_F(x_vec):
                 continue
 
             # DIFUSIÓN
-
-            diff_x =  (
+            diff_x = (1/Re) * (
                 vx[i+1,j] +
                 vx[i-1,j] +
                 vx[i,j+1] +
@@ -110,7 +111,7 @@ def calculate_F(x_vec):
                 4*vx[i,j]
             ) / 16.0
 
-            diff_y =  (
+            diff_y = (1/Re) * (
                 vy[i+1,j] +
                 vy[i-1,j] +
                 vy[i,j+1] +
@@ -204,7 +205,6 @@ def calculate_J(x_vec):
     # --------------------------------------------------------------------------
     # NODOS INTERNOS
     # --------------------------------------------------------------------------
-
     for i in range(1, Nx-1):
         for j in range(1, Ny-1):
 
@@ -219,31 +219,31 @@ def calculate_J(x_vec):
             # ==============================================================
 
             J[idx_vx, idx_vx] = (
-                -(4)/16.0
+                -(4/Re)/16.0
                 -
                 (vx[i+1,j] - vx[i-1,j]) / 8.0
             )
 
             J[idx_vx, get_idx(i+1,j,'vx')] = (
-                (1)/16.0
+                (1/Re)/16.0
                 -
                 vx[i,j]/8.0
             )
 
             J[idx_vx, get_idx(i-1,j,'vx')] = (
-                (1)/16.0
+                (1/Re)/16.0
                 +
                 vx[i,j]/8.0
             )
 
             J[idx_vx, get_idx(i,j+1,'vx')] = (
-                (1)/16.0
+                (1/Re)/16.0
                 -
                 vy[i,j]/8.0
             )
 
             J[idx_vx, get_idx(i,j-1,'vx')] = (
-                (1)/16.0
+                (1/Re)/16.0
                 +
                 vy[i,j]/8.0
             )
@@ -257,31 +257,31 @@ def calculate_J(x_vec):
             # ==============================================================
 
             J[idx_vy, idx_vy] = (
-                -(4)/16.0
+                -(4/Re)/16.0
                 -
                 (vy[i,j+1] - vy[i,j-1]) / 8.0
             )
 
             J[idx_vy, get_idx(i+1,j,'vy')] = (
-                (1)/16.0
+                (1/Re)/16.0
                 -
                 vx[i,j]/8.0
             )
 
             J[idx_vy, get_idx(i-1,j,'vy')] = (
-                (1)/16.0
+                (1/Re)/16.0
                 +
                 vx[i,j]/8.0
             )
 
             J[idx_vy, get_idx(i,j+1,'vy')] = (
-                (1)/16.0
+                (1/Re)/16.0
                 -
                 vy[i,j]/8.0
             )
 
             J[idx_vy, get_idx(i,j-1,'vy')] = (
-                (1)/16.0
+                (1/Re)/16.0
                 +
                 vy[i,j]/8.0
             )
@@ -374,264 +374,4 @@ def calculate_J(x_vec):
     return J.tocsr() # Convertimos a formato CSR para eficiencia en el solver
 
 
-# ==============================================================================
-# INICIALIZACIÓN
-# ==============================================================================
 
-vx_init = np.zeros((Nx, Ny))
-vy_init = np.zeros((Nx, Ny))
-
-vx_init[0, 1:Ny-1] = V0
-
-# obstáculos
-
-for i in range(Nx):
-    for j in range(Ny):
-
-        if is_obstacle(i, j):
-
-            vx_init[i,j] = 0.0
-            vy_init[i,j] = 0.0
-
-x_vec = grids_to_vector(vx_init, vy_init)
-
-# ==============================================================================
-# NEWTON
-# ==============================================================================
-
-print("\nIniciando Newton-Raphson...\n")
-
-error_history = []
-
-start_time = time.time()
-
-for k in range(max_iter):
-
-    # ----------------------------------------------------------------------
-    # F
-    # ----------------------------------------------------------------------
-
-    F = calculate_F(x_vec)
-
-    print("NaN en F:", np.any(np.isnan(F)))
-    print("Inf en F:", np.any(np.isinf(F)))
-
-    error = np.linalg.norm(F, np.inf) # norma infinito del vector F para medir el error
-
-    error_history.append(error)
-
-    print(f"Iteración {k+1:02d} | Error = {error:.8e}")
-
-    if error < tol:
-
-        print("\nCONVERGIÓ\n")
-        break
-
-    # ----------------------------------------------------------------------
-    # J
-    # ----------------------------------------------------------------------
-
-    J = calculate_J(x_vec)
-
-    print("Filas cero:", np.sum(J.getnnz(axis=1) == 0))
-
-    # ----------------------------------------------------------------------
-    # RESOLVER SISTEMA LINEAL J * delta = -F
-    # ----------------------------------------------------------------------
-    try:
-
-        delta = spsolve(J, -F)
-
-        print("NaN en delta:", np.any(np.isnan(delta))) #Nan es un valor indefinido, resultado de operaciones como 0/0 o inf - inf
-        print("Inf en delta:", np.any(np.isinf(delta))) #Inf es un valor que representa una cantidad infinita, resultado de operaciones como 1/0 o overflow
-
-        if np.any(np.isnan(delta)):
-
-            print("\nJacobiano singular\n")
-            break
-
-    except Exception as e:
-
-        print("\nError resolviendo sistema:\n")
-        print(e)
-        break
-
-    # ----------------------------------------------------------------------
-    # ACTUALIZAR SOLUCIÓN
-    # ----------------------------------------------------------------------
-
-    x_vec = x_vec +  delta
-
-    vx, vy = vector_to_grids(x_vec)
-
-    # entrada, volvemos a imponer la condición de velocidad de entrada para evitar que se corrompa por el método numérico
-
-    vx[0, 1:Ny-1] = V0
-    vy[0, 1:Ny-1] = 0.0
-
-    # paredes, volvemos a imponer la condición de no deslizamiento para evitar que se corrompa por el método numérico
-
-    vx[:,0] = 0.0
-    vy[:,0] = 0.0
-
-    vx[:,Ny-1] = 0.0
-    vy[:,Ny-1] = 0.0
-
-    # obstáculos, volvemos a imponer la condición de no deslizamiento para evitar que se corrompa por el método numérico
-
-    for i in range(Nx):
-        for j in range(Ny):
-
-            if is_obstacle(i, j):
-
-                vx[i,j] = 0.0
-                vy[i,j] = 0.0
-
-    # salida, volvemos a imponer la condición de velocidad de salida 
-
-    vx[Nx-1, 1:Ny-1] = vx[Nx-2, 1:Ny-1]
-    vy[Nx-1, 1:Ny-1] = vy[Nx-2, 1:Ny-1]
-
-    x_vec = grids_to_vector(vx, vy)
-
-# ==============================================================================
-# FINAL
-# ==============================================================================
-
-elapsed = time.time() - start_time
-
-vx_final, vy_final = vector_to_grids(x_vec)
-print("\n============== RESULTADOS FINALES ==============\n")
-print("vector vx final:")
-print(vx_final)
-print("\n ==============================\n")
-print("vector vy final:")
-print(vy_final)
-print(f"\nTiempo total = {elapsed:.2f} s")
-
-# Verificar convergencia final
-if error_history[-1] > tol:
-    print("\nNO convergió completamente")
-# 
-# ==============================================================================
-# PRUEBAS FINALES
-# ==============================================================================
-
-print("\n============== TESTS ==============\n")
-
-print("NaN en vx:", np.any(np.isnan(vx_final)))
-print("NaN en vy:", np.any(np.isnan(vy_final)))
-
-print("Max vx:", np.max(vx_final))
-print("Min vx:", np.min(vx_final))
-
-print("Max vy:", np.max(vy_final))
-print("Min vy:", np.min(vy_final))
-
-print("Norma final F:", np.linalg.norm(calculate_F(x_vec), np.inf))
-
-""" 
-# ==============================================================================
-# VISUALIZACIÓN
-# ==============================================================================
-
-velocity = np.sqrt(vx_final**2 + vy_final**2)
-
-plt.figure(figsize=(12,5))
-
-# magnitud
-
-plt.subplot(1,2,1)
-
-plt.imshow(
-    velocity.T,
-    origin='lower',
-    cmap='viridis',
-    extent=[0, Nx, 0, Ny],
-    aspect='auto'
-)
-
-plt.colorbar(label='|v|')
-
-plt.title("Magnitud velocidad")
-
-# obstáculos
-
-plt.axvspan(beam1_x_start, beam1_x_end,
-            ymin=beam1_y_start/Ny,
-            ymax=beam1_y_end/Ny,
-            color='red',
-            alpha=0.4)
-
-plt.axvspan(beam2_x_start, beam2_x_end,
-            ymin=beam2_y_start/Ny,
-            ymax=beam2_y_end/Ny,
-            color='red',
-            alpha=0.4)
-
-# quiver
-
-plt.subplot(1,2,2)
-
-skip = 3
-
-X, Y = np.meshgrid(
-    np.arange(0, Nx, skip),
-    np.arange(0, Ny, skip)
-)
-
-U = vx_final[::skip, ::skip].T
-V = vy_final[::skip, ::skip].T
-
-plt.quiver(X, Y, U, V)
-
-plt.title("Campo velocidades")
-
-plt.tight_layout()
-plt.show()
-
-
-"""
-"""
-
-# ==============================================================================
-# 5. VISUALIZACIÓN
-# ==============================================================================
-velocity_mag = np.sqrt(vx_final**2 + vy_final**2)
-
-plt.figure(figsize=(12, 5))
-
-# Mapa de calor
-plt.subplot(1, 2, 1)
-plt.imshow(velocity_mag.T, origin='lower', cmap='viridis', extent=[0, Nx, 0, Ny])
-plt.colorbar(label='|v| (m/s)')
-plt.title('Magnitud de Velocidad')
-plt.xlabel('x')
-plt.ylabel('y')
-
-# Vectores (submuestreados)
-skip = 4
-X, Y = np.meshgrid(np.arange(0, Nx, skip), np.arange(0, Ny, skip))
-U = vx_final[::skip, ::skip].T
-V = vy_final[::skip, ::skip].T
-plt.quiver(X, Y, U, V, color='white', scale=50)
-
-# Dibujar Beam
-rect = plt.Rectangle((beam_x_start, beam_y_start), 
-                     beam_x_end-beam_x_start, 
-                     beam_y_end-beam_y_start, 
-                     color='gray', alpha=0.5)
-plt.gca().add_patch(rect)
-
-# Gráfico de convergencia
-plt.subplot(1, 2, 2)
-# Re-calculamos residuos para graficar histórico si fuera necesario, 
-# pero aquí mostramos el estado final.
-plt.imshow(vx_final.T, origin='lower', cmap='coolwarm')
-plt.colorbar(label='Vx')
-plt.title('Campo Vx Final')
-
-plt.tight_layout()
-plt.show()
-
-"""
