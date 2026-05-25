@@ -14,15 +14,15 @@ Ny = 10
 
 N_total = Nx * Ny  
 h=1 # Tamaño del paso (ya se discretizo así que no se usa explícitamente en las fórmulas)
-V0 = 6# Velocidad de entrada  (cual era?????)
-Re = 0.1 # Número de Reynolds, controla la relación entre convección y difusión. 
+V0 = 8# Velocidad de entrada  (cual era?????)
+Re = 1 # Número de Reynolds, controla la relación entre convección y difusión. 
 #         Valores bajos = flujo laminar, valores altos = flujo turbulento.
 
 tol = 1e-6 # Tolerancia para convergencia
 max_iter = 50 #| Número máximo de iteraciones
 
 # damping 
-damping = 0.8 # Factor de amortiguamiento para la actualización de Newton. Entre 0 y 1. 
+damping = 1 # Factor de amortiguamiento para la actualización de Newton. Entre 0 y 1. 
              #Valores menores pueden ayudar a la convergencia pero hacen que el proceso sea más lento.
 
 # ==============================================================================
@@ -34,8 +34,8 @@ beam1_x_end   = 12
 beam1_y_start = 6
 beam1_y_end   = 10
 
-beam2_x_start = 40
-beam2_x_end   = 60
+beam2_x_start = 25
+beam2_x_end   = 45
 beam2_y_start = 0
 beam2_y_end   = 6
 
