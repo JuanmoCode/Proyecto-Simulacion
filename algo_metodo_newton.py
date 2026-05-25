@@ -14,7 +14,7 @@ Ny = 10
 
 N_total = Nx * Ny  
 h=1 # Tamaño del paso (ya se discretizo así que no se usa explícitamente en las fórmulas)
-V0 = 1 # Velocidad de entrada  (cual era?????)
+V0 = 6# Velocidad de entrada  (cual era?????)
 Re = 0.1 # Número de Reynolds, controla la relación entre convección y difusión. 
 #         Valores bajos = flujo laminar, valores altos = flujo turbulento.
 
@@ -22,21 +22,22 @@ tol = 1e-6 # Tolerancia para convergencia
 max_iter = 50 #| Número máximo de iteraciones
 
 # damping 
-damping = 1.0
+damping = 0.8 # Factor de amortiguamiento para la actualización de Newton. Entre 0 y 1. 
+             #Valores menores pueden ayudar a la convergencia pero hacen que el proceso sea más lento.
 
 # ==============================================================================
 # OBSTÁCULOS
 # ==============================================================================
 
-beam1_x_start = 10
-beam1_x_end   = 22
-beam1_y_start = 5
-beam1_y_end   = 7
+beam1_x_start = 0
+beam1_x_end   = 12
+beam1_y_start = 6
+beam1_y_end   = 10
 
 beam2_x_start = 40
-beam2_x_end   = 55
-beam2_y_start = 1
-beam2_y_end   = 5
+beam2_x_end   = 60
+beam2_y_start = 0
+beam2_y_end   = 6
 
 print("="*60)
 print("NAVIER STOKES 2D - NEWTON RAPHSON")
@@ -188,6 +189,9 @@ def calculate_F(x_vec):
     return F
 
 
+
+
+
 # ==============================================================================
 # JACOBIANO
 # ==============================================================================
@@ -224,29 +228,19 @@ def calculate_J(x_vec):
                 (vx[i+1,j] - vx[i-1,j]) / 8.0
             )
 
-            J[idx_vx, get_idx(i+1,j,'vx')] = (
-                (1/Re)/16.0
-                -
-                vx[i,j]/8.0
-            )
+            # Solo añadir contribución del vecino si NO es obstáculo
+            if not is_obstacle(i+1, j):
+                J[idx_vx, get_idx(i+1,j,'vx')] = (1/Re)/16.0 - vx[i,j]/8.0
 
-            J[idx_vx, get_idx(i-1,j,'vx')] = (
-                (1/Re)/16.0
-                +
-                vx[i,j]/8.0
-            )
+            if not is_obstacle(i-1, j):
+                J[idx_vx, get_idx(i-1,j,'vx')] = (1/Re)/16.0 + vx[i,j]/8.0
 
-            J[idx_vx, get_idx(i,j+1,'vx')] = (
-                (1/Re)/16.0
-                -
-                vy[i,j]/8.0
-            )
+            if not is_obstacle(i, j+1):
+                J[idx_vx, get_idx(i,j+1,'vx')] = (1/Re)/16.0 - vy[i,j]/8.0
 
-            J[idx_vx, get_idx(i,j-1,'vx')] = (
-                (1/Re)/16.0
-                +
-                vy[i,j]/8.0
-            )
+            if not is_obstacle(i, j-1):
+                J[idx_vx, get_idx(i,j-1,'vx')] = (1/Re)/16.0 + vy[i,j]/8.0
+
 
             J[idx_vx, idx_vy] = (
                 -(vx[i,j+1] - vx[i,j-1]) / 8.0
@@ -262,29 +256,17 @@ def calculate_J(x_vec):
                 (vy[i,j+1] - vy[i,j-1]) / 8.0
             )
 
-            J[idx_vy, get_idx(i+1,j,'vy')] = (
-                (1/Re)/16.0
-                -
-                vx[i,j]/8.0
-            )
+            if not is_obstacle(i+1, j):
+                J[idx_vy, get_idx(i+1,j,'vy')] = (1/Re)/16.0 - vx[i,j]/8.0
 
-            J[idx_vy, get_idx(i-1,j,'vy')] = (
-                (1/Re)/16.0
-                +
-                vx[i,j]/8.0
-            )
+            if not is_obstacle(i-1, j):
+                J[idx_vy, get_idx(i-1,j,'vy')] = (1/Re)/16.0 + vx[i,j]/8.0
 
-            J[idx_vy, get_idx(i,j+1,'vy')] = (
-                (1/Re)/16.0
-                -
-                vy[i,j]/8.0
-            )
+            if not is_obstacle(i, j+1):
+                J[idx_vy, get_idx(i,j+1,'vy')] = (1/Re)/16.0 - vy[i,j]/8.0
 
-            J[idx_vy, get_idx(i,j-1,'vy')] = (
-                (1/Re)/16.0
-                +
-                vy[i,j]/8.0
-            )
+            if not is_obstacle(i, j-1):
+                J[idx_vy, get_idx(i,j-1,'vy')] = (1/Re)/16.0 + vy[i,j]/8.0
 
             J[idx_vy, idx_vx] = (
                 -(vy[i+1,j] - vy[i-1,j]) / 8.0
